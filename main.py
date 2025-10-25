@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS roles (
     id INTEGER
 )
 """)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS warns (
+    guild_id TEXT,
+    user INTEGER,
+    count INTEGER
+)
+""")
 database.commit()
 
 class TicketView(discord.ui.View):
@@ -164,6 +171,15 @@ def get_role(guild: discord.Guild, name: str) -> discord.Role | None:
     return guild.get_role(channel_id)
   return None
 
+def get_warns(guild: discord.Guild, user: int) -> discord.Role | None:
+  guild_id_str = str(guild.id)
+  cursor.execute("SELECT count FROM warns WHERE guild_id = ? AND user = ?", (guild_id_str, user))
+  result = cursor.fetchone()
+  if result:
+    channel_id = result[0]
+    return guild.get_role(channel_id)
+  return None
+
 @bot.slash_command(name="setup", description="Sets up the bot.")
 async def setup(ctx: ApplicationContext, welcome_channel: TextChannel, ticket_channel: TextChannel, log_channel: TextChannel, team_role: discord.Role, member_role: discord.Role):
     guild_id_str = str(ctx.guild_id)
@@ -226,14 +242,32 @@ class FakeNitroView(discord.ui.View):
 async def nitrogen(ctx: ApplicationContext):
     embed = Embed(color=Color.blurple(), title="Dir wurde etwas geschenkt!", description="Dir wurde ein Nitro Abbonement geschenkt!",)
     embed.set_image(url="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Ftse4.mm.bing.net%2Fth%2Fid%2FOIP.qSLk7_TjbqrDhTzK3KMcBgHaEK%3Fpid%3DApi&f=1&ipt=5ec06c5bb8c5a56f39aba8eb0840e7f29a296fd13c2af50f3c697bee6baf7cb3&ipo=images")
-    await ctx.send(embed=embed, view=FakeNitroView())
+    await ctx.response.send_message(embed=embed, view=FakeNitroView())
 
 @bot.event
 async def on_guild_join(guild: Guild):
     owner = guild.owner
     channel = await owner.create_dm()
     embed = Embed(color=Color.random(), title="Danke!",
-                  description="Ich danke dir echt daß du unseren Bot nutzt! Es heißt so viel zu mir! Falls du diesen nicht eingeladen hast, erkundige dich bei einem der Teammitglieder.", )
+                  description="Ich danke dir echt daß du unseren Bot nutzt! Es heißt so viel zu mir! Falls du diesen nicht eingeladen hast, erkundige dich bei einem der Teammitglieder.",
+                  )
+    owner.send(embed=embed)
+
+@bot.slash_command(name="warn", description="Warne einen Nutzer")
+async def warn(ctx: ApplicationContext, user: discord.Member):
+    guild_id_str = ctx.guild_id.__str__()
+    count = get_warns(ctx.guild, user.id)
+    if not count:
+        count = 0
+    cursor.execute("INSERT INTO warns (guild_id, user, count) VALUES (?, ?, ?)", (guild_id_str, user.id, count + 1))
+    embed = Embed(
+        color=discord.Color.random(),
+        title="Verwarnt ✅",
+        description=f"Du hast den Nutzer {user.name} verwarnt!"
+    )
+    embed.add_field(label="Warns vorher", value=count.__str__(), inline=False)
+    embed.add_field(name="Warns jetzt", value=str(count+1), inline=False)
+    await ctx.response.send_message(embed=embed)
 
 
 bot.run(os.getenv("TOKEN"))
