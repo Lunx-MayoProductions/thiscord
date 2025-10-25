@@ -269,6 +269,19 @@ async def warn(ctx: ApplicationContext, user: discord.Member):
     embed.add_field(name="Warns jetzt", value=str(count+1), inline=False)
     await ctx.response.send_message(embed=embed)
 
+@bot.slash_command(name="warns", description="Checke die Warns eines Nutzers")
+async def warns(ctx: ApplicationContext, user: discord.User):
+    count = get_warns(ctx.guild, user.id)
+    if not count:
+        count = 0
+    embed = Embed(
+        color=discord.Color.random(),
+        title="Warns",
+        description="Die Warns werden geholt und dir gleich angezeigt..."
+    )
+    embed.add_field(name="Warns", value=str(count), inline=False)
+    await ctx.response.send_message(embed=embed)
+
 
 bot.run(os.getenv("TOKEN"))
 database.close()
