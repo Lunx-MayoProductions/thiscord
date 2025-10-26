@@ -162,6 +162,8 @@ def get_channel(guild: discord.Guild, name: str) -> discord.TextChannel | None:
     return None
 
 
+
+
 def get_role(guild: discord.Guild, name: str) -> discord.Role | None:
   guild_id_str = str(guild.id)
   cursor.execute("SELECT id FROM roles WHERE guild_id = ? AND name = ?", (guild_id_str, name))
@@ -171,14 +173,25 @@ def get_role(guild: discord.Guild, name: str) -> discord.Role | None:
     return guild.get_role(channel_id)
   return None
 
-def get_warns(guild: discord.Guild, user: int) -> discord.Role | None:
-  guild_id_str = str(guild.id)
-  cursor.execute("SELECT count FROM warns WHERE guild_id = ? AND user = ?", (guild_id_str, user))
-  result = cursor.fetchone()
-  if result:
-    channel_id = result[0]
-    return guild.get_role(channel_id)
-  return None
+async def check_perms(ctx: ApplicationContext) -> bool:
+    if not (ctx.user.roles.__contains__(get_role(name="team", guild=ctx.guild))):
+        embed = Embed(
+            color=discord.Color.red(),
+            title="Uh oh!",
+            description="Du hast nicht genügend Rechte dafür!"
+        )
+        await ctx.response.send_message(embed=embed, ephemeral=True)
+        return False
+    return True
+
+def get_warns(guild: discord.Guild, user_id: int) -> int:
+    guild_id_str = str(guild.id)
+    cursor.execute(
+        "SELECT count FROM warns WHERE guild_id = ? AND user = ?",
+        (guild_id_str, user_id)
+    )
+    result = cursor.fetchone()
+    return result[0] if result else 0
 
 @bot.slash_command(name="setup", description="Sets up the bot.")
 async def setup(ctx: ApplicationContext, welcome_channel: TextChannel, ticket_channel: TextChannel, log_channel: TextChannel, team_role: discord.Role, member_role: discord.Role):
@@ -251,37 +264,104 @@ async def on_guild_join(guild: Guild):
     embed = Embed(color=Color.random(), title="Danke!",
                   description="Ich danke dir echt daß du unseren Bot nutzt! Es heißt so viel zu mir! Falls du diesen nicht eingeladen hast, erkundige dich bei einem der Teammitglieder.",
                   )
-    owner.send(embed=embed)
+    await channel.send(embed=embed)
 
 @bot.slash_command(name="warn", description="Warne einen Nutzer")
 async def warn(ctx: ApplicationContext, user: discord.Member):
-    guild_id_str = ctx.guild_id.__str__()
+    if not await check_perms(ctx):
+        return
+    guild_id_str = str(ctx.guild_id)
     count = get_warns(ctx.guild, user.id)
-    if not count:
-        count = 0
-    cursor.execute("INSERT INTO warns (guild_id, user, count) VALUES (?, ?, ?)", (guild_id_str, user.id, count + 1))
+    new_count = count + 1
+
+    if count == 0:
+        cursor.execute(
+            "INSERT INTO warns (guild_id, user, count) VALUES (?, ?, ?)",
+            (guild_id_str, user.id, new_count)
+        )
+    else:
+        cursor.execute(
+            "UPDATE warns SET count = ? WHERE guild_id = ? AND user = ?",
+            (new_count, guild_id_str, user.id)
+        )
+
+    database.commit()
+
     embed = Embed(
-        color=discord.Color.random(),
+        color=discord.Color.orange(),
         title="Verwarnt ✅",
-        description=f"Du hast den Nutzer {user.name} verwarnt!"
+        description=f"{user.mention} wurde verwarnt!"
     )
-    embed.add_field(label="Warns vorher", value=count.__str__(), inline=False)
-    embed.add_field(name="Warns jetzt", value=str(count+1), inline=False)
-    await ctx.response.send_message(embed=embed)
+    embed.add_field(name="Warns vorher", value=str(count))
+    embed.add_field(name="Warns jetzt", value=str(new_count))
+    await ctx.respond(embed=embed)
+
+    dmchannel: DMChannel = await user.create_dm()
+    dmEmbed = Embed(
+        color=discord.Color.orange(),
+        title="Verwarnt",
+        description=f"**Du wurdest verwarnt!**"
+    )
+
+    dmEmbed.add_field(name="Server", value=ctx.guild.name, inline=False)
+    dmEmbed.add_field(name="Moderator", value=f"{ctx.user.display_name} ({ctx.user.name})", inline=False)
+    dmEmbed.add_field(name="Anzahl", value=new_count, inline=False)
+
+    await dmchannel.send(embed=dmEmbed)
+
 
 @bot.slash_command(name="warns", description="Checke die Warns eines Nutzers")
-async def warns(ctx: ApplicationContext, user: discord.User):
+async def warns(ctx: ApplicationContext, user: discord.Member):
+    if not await check_perms(ctx):
+        return
     count = get_warns(ctx.guild, user.id)
-    if not count:
-        count = 0
     embed = Embed(
         color=discord.Color.random(),
-        title="Warns",
-        description="Die Warns werden geholt und dir gleich angezeigt..."
+        title=f"Warns von {user.name}",
+        description=f"Dieser Nutzer hat **{count}** Verwarnung(en)."
     )
-    embed.add_field(name="Warns", value=str(count), inline=False)
+    await ctx.respond(embed=embed)
+
+
+@bot.slash_command(name="ban", description="Banne einen Nutzer vom Server")
+@default_permissions(ban_members=True)
+async def ban(ctx: ApplicationContext, user: discord.Member, reason: str):
+    if not await check_perms(ctx):
+        return
+    try:
+        await user.ban(reason=reason)
+    except:
+        embed = Embed(
+            color=discord.Color.dark_red(),
+            title="Fehler!",
+            description="Ein Fehler ist passiert! (Der Bot hat wahrscheinlich nicht ausreichende Rechte)"
+        )
+        await ctx.response.send_message(embed=embed, ephemeral=True)
+        return
+    embed = Embed(
+        color=discord.Color.random(),
+        title="Gebannt ✅",
+        description="Erfolgreich gebannt!"
+    )
+    embed.add_field(name="User", value=f"{user.display_name} ({user.name})", inline=False)
+    embed.add_field(name="Grund", value=reason, inline=False)
     await ctx.response.send_message(embed=embed)
+    dmchannel: DMChannel = await user.create_dm()
+    dmEmbed = Embed(
+        color=discord.Color.orange(),
+        title="Gebannt",
+        description=f"**Du wurdest gebannt!**"
+    )
+
+    dmEmbed.add_field(name="Server", value=ctx.guild.name, inline=False)
+    dmEmbed.add_field(name="Moderator", value=f"{ctx.user.display_name} ({ctx.user.name})", inline=False)
+    dmEmbed.add_field(name="Grund", value=reason, inline=False)
+    await dmchannel.send(dmEmbed)
+
+
+@bot.event
+async def on_close():
+    database.close()
 
 
 bot.run(os.getenv("TOKEN"))
-database.close()
