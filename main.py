@@ -332,7 +332,7 @@ async def ban(ctx: ApplicationContext, user: discord.Member, reason: str):
         await user.ban(reason=reason)
     except:
         embed = Embed(
-            color=discord.Color.dark_red(),
+            color=discord.Color.red(),
             title="Fehler!",
             description="Ein Fehler ist passiert! (Der Bot hat wahrscheinlich nicht ausreichende Rechte)"
         )
@@ -351,6 +351,41 @@ async def ban(ctx: ApplicationContext, user: discord.Member, reason: str):
         color=discord.Color.orange(),
         title="Gebannt",
         description=f"**Du wurdest gebannt!**"
+    )
+
+    dmEmbed.add_field(name="Server", value=ctx.guild.name, inline=False)
+    dmEmbed.add_field(name="Moderator", value=f"{ctx.user.display_name} ({ctx.user.name})", inline=False)
+    dmEmbed.add_field(name="Grund", value=reason, inline=False)
+    await dmchannel.send(dmEmbed)
+
+@bot.slash_command(name="kick", description="Kicke einen Nutzer vom Server")
+@default_permissions(kick_members=True)
+async def kick(ctx: ApplicationContext, user: discord.Member, reason: str):
+    if not await check_perms(ctx):
+        return
+    try:
+        await user.kick(reason=reason)
+    except:
+        embed = Embed(
+            color=discord.Color.red(),
+            title="Fehler!",
+            description="Ein Fehler ist passiert! (Der Bot hat wahrscheinlich nicht ausreichende Rechte)"
+        )
+        await ctx.response.send_message(embed=embed, ephemeral=True)
+        return
+    embed = Embed(
+        color=discord.Color.random(),
+        title="Kicked ✅",
+        description="Erfolgreich gekickt!"
+    )
+    embed.add_field(name="User", value=f"{user.display_name} ({user.name})", inline=False)
+    embed.add_field(name="Grund", value=reason, inline=False)
+    await ctx.response.send_message(embed=embed)
+    dmchannel: DMChannel = await user.create_dm()
+    dmEmbed = Embed(
+        color=discord.Color.orange(),
+        title="Kicked",
+        description=f"**Du wurdest gekickt!**"
     )
 
     dmEmbed.add_field(name="Server", value=ctx.guild.name, inline=False)
