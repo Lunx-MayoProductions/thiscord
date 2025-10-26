@@ -1,4 +1,4 @@
-# ThisCord
+# ThisCord 👥
 
 **ThisCord** ist ein Discord-Bot, der voller Funktionen steckt, um deinen Server zu verwalten und zu verbessern. Von Moderationstools bis hin zu lustigen Interaktionen – ThisCord hat alles!
 
